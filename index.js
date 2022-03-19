@@ -4,15 +4,28 @@ const puppeteer = require('puppeteer');
 const _ = require("underscore");
 const pg = require('pg')
 const pool = new pg.Pool({
-    host:  "localhost",
+    host: "localhost",
     user: "postgres",
     port: 5432,
     password: "root",
     database: "crawler"
 });
 
+const getHref = async (href) => {
 
-(async function main() {
+    const client = await pool.connect()
+    const result = await client.query({
+        rowMode: 'array',
+        text: 'SELECT href FROM data WHERE href = $1',
+        values: [href]
+    })
+    await client.end()
+
+    return result.rows[0];
+
+}
+
+const crawl = async () => {
 
     try {
 
@@ -34,7 +47,7 @@ const pool = new pg.Pool({
 
         var correctAdverts = _.filter(
             uniqueHrefs,
-            function(s) {
+            function (s) {
                 return s.indexOf('https://www.olx.pl/d/oferta/') !== -1 || s.indexOf('https://www.otodom.pl/pl/oferta/') !== -1;
             }
         );
@@ -43,54 +56,59 @@ const pool = new pg.Pool({
         const olxPriceSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-dwud4b > div.css-1wws9er > div.css-dcwlyx > h3';
         const olxAreaSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-dwud4b > div.css-1wws9er > ul > li:nth-child(5) > p';
         const olxAdditionalPaymentsSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-dwud4b > div.css-1wws9er > ul > li:nth-child(7) > p';
+        const olxDistrictSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-z88e9u > div:nth-child(2) > div > section > div.css-1nrl4q4 > div > p.css-7xdcwc-Text.eu5v0x0 > span';
 
         const otodomSelector = '#__next > main > div.css-17vqyja.e1t9fvcw3 > div.css-1sxg93g.e1t9fvcw1 > header > strong';
 
         let i = 0;
         for (const href of correctAdverts) {
-
             await page.goto(href, {
                 waitUntil: 'networkidle2',
                 timeout: 0
             });
             // await page.screenshot({path: 'img/' + Date.now() + '.png', fullPage: true});
-            if (!href.indexOf('https://www.olx.pl/d/oferta/')) {
+            if (href.startsWith('https://www.olx.pl/d/oferta/')) {
                 console.log('success! ' + href)
 
-                if (await page.$(olxPriceSelector) !== null){
+                if (await page.$(olxPriceSelector) !== null && (await page.$(olxDistrictSelector) !== null)) {
                     let price = await getData(page, olxPriceSelector, null);
                     let additionalPayments = await getData(page, olxAdditionalPaymentsSelector, 'Czynsz');
                     let area = await getData(page, olxAreaSelector, 'Powierzchnia: ');
+                    let district = await getData(page, olxDistrictSelector, null, true);
+                    if (!district) {
+                        console.log('district not found at ' + href);
+                        district = await page.evaluate(el => el.textContent, await page.$(olxDistrictSelector));
+                    }
                     advertInfo[i] = {
                         'href': href,
                         'price': price,
                         'additionalPayments': additionalPayments,
-                        'area': area
+                        'area': area,
+                        'district': district,
                     };
 
-                    pool.connect(function(err, client, done) {
-                        if(err) {
-                            return console.error('connexion error', err);
-                        }
-                        client.query("INSERT INTO data (price,href,additional_payments,area) VALUES ($1,$2,$3,$4) ON CONFLICT (href) DO NOTHING;", [price,href,additionalPayments,area], function() {
-                            done();
+                    if (district) {
+                        console.log('attempting to add a new record ' + href);
+
+                        pool.connect(function (err, client, done) {
+                            if (err) {
+                                return console.error('connexion error', err);
+                            }
+                            client.query("INSERT INTO data (price,href,additional_payments,area,district) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (href) DO NOTHING;", [price, href, additionalPayments, area, district], function () {
+                                done();
+                                console.log(advertInfo);
 
 
+                            });
                         });
-                    });
+
+                    }
                     i++;
                 }
 
-            } else {
-                if (await page.$(olxPriceSelector) !== null){
-                    let element = await page.$(otodomSelector)
-                    let value = await page.evaluate(el => el.textContent, element)
-                    advertInfo[href] = value;
-                }
             }
 
         }
-        console.log(advertInfo);
 
         await browser.close();
     } catch (err) {
@@ -99,14 +117,22 @@ const pool = new pg.Pool({
 
 
 
+}
+
+
+(async function main() {
+    const cron = require('node-cron');
+    cron.schedule('*/20 * * * *', function() {
+       crawl();
+      });
 })();
 
 
 
-
-const getData = async (page, olxSelector, word = null) => {
+const getData = async (page, olxSelector, word = null, district = null) => {
     if (await page.$(olxSelector) !== null) {
         let data = await page.evaluate(el => el.textContent, await page.$(olxSelector))
+        if (district) return data;
         if (word) {
             if (!data.indexOf(word)) {
                 return data.replace(/[^\d.,]/g, '');
@@ -114,4 +140,3 @@ const getData = async (page, olxSelector, word = null) => {
         } else return data.replace(/\D/g, '');
     }
 }
-
