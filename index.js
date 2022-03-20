@@ -3,6 +3,8 @@
 const puppeteer = require('puppeteer');
 const _ = require("underscore");
 const pg = require('pg')
+const fs = require('fs')
+
 const pool = new pg.Pool({
     host: "localhost",
     user: "postgres",
@@ -11,19 +13,20 @@ const pool = new pg.Pool({
     database: "crawler"
 });
 
-const getHref = async (href) => {
-
-    const client = await pool.connect()
-    const result = await client.query({
-        rowMode: 'array',
-        text: 'SELECT href FROM data WHERE href = $1',
-        values: [href]
-    })
-    await client.end()
-
-    return result.rows[0];
+const getImageName = async (href) => {
+    return href.substring(href.indexOf('oferta') + 6);
 
 }
+
+const checkForPromotedAdvert = async (href) => {
+
+    if (href.endsWith(';promoted')) {
+        href = href.slice(0, -8)
+    }
+    return href.replace(/[^a-zA-Z ]/g, "");
+}
+
+
 
 const crawl = async () => {
 
@@ -61,52 +64,59 @@ const crawl = async () => {
         const otodomSelector = '#__next > main > div.css-17vqyja.e1t9fvcw3 > div.css-1sxg93g.e1t9fvcw1 > header > strong';
 
         let i = 0;
-        for (const href of correctAdverts) {
+        for (let href of correctAdverts) {
+            console.log('entering ' + href);
             await page.goto(href, {
                 waitUntil: 'networkidle2',
                 timeout: 0
             });
-            // await page.screenshot({path: 'img/' + Date.now() + '.png', fullPage: true});
-            if (href.startsWith('https://www.olx.pl/d/oferta/')) {
-                console.log('success! ' + href)
+            let hrefFilename = await checkForPromotedAdvert(href);
+                let imgName = await getImageName(hrefFilename);
+            if (!fs.existsSync('img/' + imgName + '.png')) {
+                await page.screenshot({ path: 'img/' + imgName + '.png', fullPage: true });
+                if (href.startsWith('https://www.olx.pl/d/oferta/')) {
+                    console.log('success! ' + href)
 
-                if (await page.$(olxPriceSelector) !== null && (await page.$(olxDistrictSelector) !== null)) {
-                    let price = await getData(page, olxPriceSelector, null);
-                    let additionalPayments = await getData(page, olxAdditionalPaymentsSelector, 'Czynsz');
-                    let area = await getData(page, olxAreaSelector, 'Powierzchnia: ');
-                    let district = await getData(page, olxDistrictSelector, null, true);
-                    if (!district) {
-                        console.log('district not found at ' + href);
-                        district = await page.evaluate(el => el.textContent, await page.$(olxDistrictSelector));
-                    }
-                    advertInfo[i] = {
-                        'href': href,
-                        'price': price,
-                        'additionalPayments': additionalPayments,
-                        'area': area,
-                        'district': district,
-                    };
+                    if (await page.$(olxPriceSelector) !== null && (await page.$(olxDistrictSelector) !== null)) {
+                        let price = await getData(page, olxPriceSelector, null);
+                        let additionalPayments = await getData(page, olxAdditionalPaymentsSelector, 'Czynsz');
+                        let area = await getData(page, olxAreaSelector, 'Powierzchnia: ');
+                        let district = await getData(page, olxDistrictSelector, null, true);
+                        if (!district) {
+                            console.log('district not found at ' + href);
+                            district = await page.evaluate(el => el.textContent, await page.$(olxDistrictSelector));
+                        }
+                        advertInfo[i] = {
+                            'href': href,
+                            'price': price,
+                            'additionalPayments': additionalPayments,
+                            'area': area,
+                            'district': district,
+                        };
 
-                    if (district) {
-                        console.log('attempting to add a new record ' + href);
+                        if (district) {
+                            console.log('attempting to add a new record ' + href);
 
-                        pool.connect(function (err, client, done) {
-                            if (err) {
-                                return console.error('connexion error', err);
-                            }
-                            client.query("INSERT INTO data (price,href,additional_payments,area,district) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (href) DO NOTHING;", [price, href, additionalPayments, area, district], function () {
-                                done();
-                                console.log(advertInfo);
+                            pool.connect(function (err, client, done) {
+                                if (err) {
+                                    return console.error('connexion error', err);
+                                }
+                                client.query("INSERT INTO data (price,href,additional_payments,area,district) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (href) DO NOTHING;", [price, href, additionalPayments, area, district], function () {
+                                    done();
+                                    console.log(advertInfo);
 
 
+                                });
                             });
-                        });
 
+                        }
+                        i++;
                     }
-                    i++;
-                }
 
-            }
+                } else {
+                    console.log('already in DB');
+                }
+            }            
 
         }
 
@@ -123,7 +133,7 @@ const crawl = async () => {
 (async function main() {
     const cron = require('node-cron');
     cron.schedule('*/20 * * * *', function() {
-       crawl();
+    crawl();
       });
 })();
 
