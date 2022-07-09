@@ -10,8 +10,10 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "node-cron": "^3.0.1",
     "pg": "^8.7.3",
     "puppeteer": "^13.5.1",
-    "underscore": "^1.13.2"
+    "underscore": "^1.13.2",
+    "uuid": "^8.3.2"
   }
 }
