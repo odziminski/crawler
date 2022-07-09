@@ -4,7 +4,6 @@ const puppeteer = require('puppeteer');
 const _ = require("underscore");
 const pg = require('pg')
 const fs = require('fs');
-const { exit } = require('process');
 
 const pool = new pg.Pool({
     host: "ec2-52-48-159-67.eu-west-1.compute.amazonaws.com",
