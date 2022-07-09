@@ -7,11 +7,11 @@ const fs = require('fs');
 const { exit } = require('process');
 
 const pool = new pg.Pool({
-    host: "localhost",
-    user: "postgres",
+    host: "ec2-52-48-159-67.eu-west-1.compute.amazonaws.com",
+    user: "orjiloeenxaeks",
     port: 5432,
-    password: "root",
-    database: "crawler"
+    password: "6803c26e8b82bfd2e14aa5a635e3f247b4831eacd9e4fa371db1f54ab9a59a1f",
+    database: "d4cdoa4c08nksv"
 });
 
 const getImageName = async (href) => {
