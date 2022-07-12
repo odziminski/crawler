@@ -34,7 +34,12 @@ const crawl = async () => {
 
         const link = 'https://www.olx.pl/nieruchomosci/mieszkania/wynajem/wroclaw/?search%5Bfilter_float_price%3Ato%5D=3000&search%5Bfilter_float_price%3Afrom%5D=1000&search%5Bfilter_enum_rooms%5D%5B0%5D=two';
 
-        const browser = await puppeteer.launch();
+        const browser = await puppeteer.launch({
+            'args' : [
+              '--no-sandbox',
+              '--disable-setuid-sandbox'
+            ]
+          });
         const [page] = await browser.pages();
 
         await page.goto(link);
