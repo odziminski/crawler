@@ -4,15 +4,6 @@ const puppeteer = require('puppeteer');
 const _ = require("underscore");
 const pg = require('pg')
 const fs = require('fs');
-const AWS = require('aws-sdk');
-const ID = 'AKIAQ22Y4SZAKAJ6QLWX';
-const SECRET = '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';
-const s3 = new AWS.S3({
-    accessKeyId: ID,
-    secretAccessKey: SECRET
-});
-
-const BUCKET_NAME = 'crawler-scraper-bucket';
 
 const pool = new pg.Pool({
     host: "ec2-99-81-16-126.eu-west-1.compute.amazonaws.com",
@@ -33,9 +24,9 @@ const getImageName = async (href) => {
 const checkForPromotedAdvert = async (href) => {
 
     if (href.endsWith(';promoted')) {
-        href = href.slice(0, -8)
+        return href.slice(0, -8)
     }
-    return href.replace(/[^a-zA-Z ]/g, "");
+    return href;
 }
 
 
@@ -79,7 +70,6 @@ const crawl = async () => {
         const olxAdditionalPaymentsSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-1vnw4ly > div.css-1wws9er > ul > li:nth-child(7) > p';
         const olxDistrictSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-1pyxm30 > div:nth-child(2) > div > section > div.css-1nrl4q4 > div > p.css-7xdcwc-Text.eu5v0x0 > span';
 
-        const otodomSelector = '#__next > main > div.css-17vqyja.e1t9fvcw3 > div.css-1sxg93g.e1t9fvcw1 > header > strong';
         console.log(correctAdverts);
         let i = 0;
         for (let href of correctAdverts) {
@@ -88,74 +78,46 @@ const crawl = async () => {
                 waitUntil: 'networkidle2',
                 timeout: 0
             });
-            let hrefFilename = await checkForPromotedAdvert(href);
-            let imgName = await getImageName(hrefFilename);
-            if (!fs.existsSync('img/' + imgName + '.png')) {
 
-                const screenshot = await page.screenshot({
-                    fullPage: true
-                });
-                const params = { Bucket: BUCKET_NAME, Key: imgName, Body: screenshot };
-                await s3.putObject(params).promise();
-                s3.upload(params, function(err, data) {
-                    if (err) {
-                        throw err;
+            if (href.startsWith('https://www.olx.pl/d/oferta/')) {
+                console.log('success! ' + href)
+                let hrefChecked = await checkForPromotedAdvert(href);
+
+                let price = await getData(page, olxPriceSelector, null);
+                let additionalPayments = await getData(page, olxAdditionalPaymentsSelector, 'Czynsz');
+                let area = await getData(page, olxAreaSelector, 'Powierzchnia: ');
+
+                let district = await getData(page, olxDistrictSelector, null, true);
+                if (!district) {
+                    console.log('district not found at ' + href);
+                    if (await page.$(olxDistrictSelector) !== null) {
+                        district = await page.evaluate(el => el.textContent, await page.$(olxDistrictSelector));
+                    } else {
+                        district = 'undefined';
                     }
-                    console.log(`File uploaded successfully. ${data.Location}`);
-                });
-
-                if (href.startsWith('https://www.olx.pl/d/oferta/')) {
-                    console.log('success! ' + href)
-
-                    let price = await getData(page, olxPriceSelector, null);
-                    let additionalPayments = await getData(page, olxAdditionalPaymentsSelector, 'Czynsz');
-                    let area = await getData(page, olxAreaSelector, 'Powierzchnia: ');
-                    console.log(price, additionalPayments, area);
-
-                    let district = await getData(page, olxDistrictSelector, null, true);
-                    if (!district) {
-                        console.log('district not found at ' + href);
-                        if (await page.$(olxDistrictSelector) !== null) {
-                            district = await page.evaluate(el => el.textContent, await page.$(olxDistrictSelector));
-                        } else {
-                            district = 'undefined';
-                        }
-
-                    }
-                    advertInfo[i] = {
-                        'href': href,
-                        'price': price,
-                        'additionalPayments': additionalPayments,
-                        'area': area,
-                        'district': district,
-                    };
-
-                    if (district) {
-                        console.log('attempting to add a new record ' + href);
-
-                        pool.connect(function (err, client, done) {
-                            if (err) {
-                                return console.error('connexion error', err);
-                            }
-                            client.query("INSERT INTO data (price,href,additional_payments,area,district,image_name) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (href) DO NOTHING;", [price, href, additionalPayments, area, district, imgName], function () {
-                                done();
-
-
-                            });
-                            console.log('added ' + href);
-
-                        });
-
-                    }
-                    i++;
-
-
-                } else {
-                    console.log('already in DB');
                 }
-            }
+                if (price && additionalPayments && area && district) {
+                    console.log('attempting to add a new record ' + href);
 
+                    pool.query("INSERT INTO data (price,href,additional_payments,area,district) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (href) DO NOTHING;", [price, hrefChecked, additionalPayments, area, district], function () {});
+
+                    console.log('added ' + href);
+                }
+                advertInfo[i] = {
+                    'href': href,
+                    'price': price,
+                    'additionalPayments': additionalPayments,
+                    'area': area,
+                    'district': district,
+                };
+
+
+                i++;
+
+
+            }
         }
+
         console.log(advertInfo);
 
         await browser.close();
@@ -169,10 +131,10 @@ const crawl = async () => {
 
 
 (async function main() {
-    // const cron = require('node-cron');
-    // cron.schedule('*/20 * * * *', function() {
-    crawl();
-    //   });
+    const cron = require('node-cron');
+    cron.schedule('*/20 * * * *', function () {
+        crawl();
+    });
 })();
 
 
@@ -188,21 +150,3 @@ const getData = async (page, olxSelector, word = null, district = null) => {
         } else return data.replace(/\D/g, '');
     }
 }
-
-const uploadFile = (fileName) => {
-    const fileContent = fs.readFileSync(fileName);
-
-    const params = {
-        Bucket: BUCKET_NAME,
-        Key: 'cat.jpg', // File name you want to save as in S3
-        Body: fileContent
-    };
-
-    // Uploading files to the bucket
-    s3.upload(params, function (err, data) {
-        if (err) {
-            throw err;
-        }
-        console.log(`File uploaded successfully. ${data.Location}`);
-    });
-};
