@@ -1,15 +1,16 @@
 'use strict';
+require('dotenv').config();
 
 const puppeteer = require('puppeteer');
 const _ = require("underscore");
 const pg = require('pg')
 
 const pool = new pg.Pool({
-    host: "ec2-99-81-16-126.eu-west-1.compute.amazonaws.com",
-    user: "uexrudscyqkrlu",
-    port: 5432,
-    password: "d56157f635474960d619b07b046618f031b2fd69432659dff454a8276d58947f",
-    database: "dbls649lleuqal",
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    port: process.env.DB_PORT,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
     ssl: {
         rejectUnauthorized: false,
     }
@@ -30,8 +31,8 @@ const crawl = async () => {
 
     try {
 
-        const link = 
-                    'https://www.olx.pl/d/nieruchomosci/stancje-pokoje/dolnoslaskie/?search%5Border%5D=relevance:desc&search%5Bfilter_float_price:from%5D=500&search%5Bfilter_float_price:to%5D=1000&search%5Bfilter_enum_furniture%5D%5B0%5D=yes&search%5Bfilter_enum_roomsize%5D%5B0%5D=one&search%5Bfilter_enum_preferences%5D%5B0%5D=women&search%5Bfilter_enum_preferences%5D%5B1%5D=student'        ;
+        const link =
+            'https://www.olx.pl/d/nieruchomosci/stancje-pokoje/dolnoslaskie/?search%5Border%5D=relevance:desc&search%5Bfilter_float_price:from%5D=500&search%5Bfilter_float_price:to%5D=1000&search%5Bfilter_enum_furniture%5D%5B0%5D=yes&search%5Bfilter_enum_roomsize%5D%5B0%5D=one&search%5Bfilter_enum_preferences%5D%5B0%5D=women&search%5Bfilter_enum_preferences%5D%5B1%5D=student';
 
         const browser = await puppeteer.launch({
             'args': [
@@ -66,7 +67,7 @@ const crawl = async () => {
         const olxDistrictSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-1pyxm30 > div:nth-child(2) > div > section > div.css-1nrl4q4 > div > p.css-7xdcwc-Text.eu5v0x0 > span';
 
         console.log(correctAdverts);
-        
+
         let i = 0;
         for (let href of correctAdverts) {
             href = "https://www.olx.pl" + href;
@@ -93,11 +94,11 @@ const crawl = async () => {
                         district = 'undefined';
                     }
                 }
-                    console.log('attempting to add a new record ' + href);
+                console.log('attempting to add a new record ' + href);
 
-                    pool.query("INSERT INTO data_1person (price,href,district) VALUES ($1,$2,$3) ON CONFLICT (href) DO NOTHING;", [price, hrefChecked, district], function () {});
+                pool.query("INSERT INTO data_1person (price,href,district) VALUES ($1,$2,$3) ON CONFLICT (href) DO NOTHING;", [price, hrefChecked, district], function () {});
 
-                    console.log('added ' + href);
+                console.log('added ' + href);
                 advertInfo[i] = {
                     'href': href,
                     'price': price,

@@ -1,25 +1,20 @@
 'use strict';
+require('dotenv').config();
 
 const puppeteer = require('puppeteer');
 const _ = require("underscore");
 const pg = require('pg')
-const fs = require('fs');
 
 const pool = new pg.Pool({
-    host: "ec2-99-81-16-126.eu-west-1.compute.amazonaws.com",
-    user: "uexrudscyqkrlu",
-    port: 5432,
-    password: "d56157f635474960d619b07b046618f031b2fd69432659dff454a8276d58947f",
-    database: "dbls649lleuqal",
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    port: process.env.DB_PORT,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
     ssl: {
         rejectUnauthorized: false,
     }
 });
-
-const getImageName = async (href) => {
-    return href.substring(href.indexOf('oferta') + 6);
-
-}
 
 const checkForPromotedAdvert = async (href) => {
 
@@ -102,14 +97,16 @@ const crawl = async () => {
                     pool.query("INSERT INTO data (price,href,additional_payments,area,district) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (href) DO NOTHING;", [price, hrefChecked, additionalPayments, area, district], function () {});
 
                     console.log('added ' + href);
+
+                    advertInfo[i] = {
+                        'href': href,
+                        'price': price,
+                        'additionalPayments': additionalPayments,
+                        'area': area,
+                        'district': district,
+                    };
                 }
-                advertInfo[i] = {
-                    'href': href,
-                    'price': price,
-                    'additionalPayments': additionalPayments,
-                    'area': area,
-                    'district': district,
-                };
+
 
 
                 i++;
