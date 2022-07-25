@@ -1,5 +1,6 @@
 'use strict';
-if (process.env.NODE_ENV !== 'production') require('dotenv').config()
+if (process.env.NODE_ENV !== 'production')
+ require('dotenv').config()
 
 const puppeteer = require('puppeteer');
 const _ = require("underscore");
@@ -27,7 +28,10 @@ const checkForPromotedAdvert = async (href) => {
 
 
 const crawl = async () => {
-
+    let myModule = require('./modules/mail.js');
+    let transporter = myModule.transporter;
+    transporter.verify().then(console.log).catch(console.error);
+    
     try {
 
         const link = 'https://www.olx.pl/nieruchomosci/mieszkania/wynajem/wroclaw/?search%5Bfilter_float_price%3Ato%5D=3000&search%5Bfilter_float_price%3Afrom%5D=1000&search%5Bfilter_enum_rooms%5D%5B0%5D=two';
@@ -65,17 +69,16 @@ const crawl = async () => {
         const olxAdditionalPaymentsSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-1vnw4ly > div.css-1wws9er > ul > li:nth-child(7) > p';
         const olxDistrictSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-1pyxm30 > div:nth-child(2) > div > section > div.css-1nrl4q4 > div > p.css-7xdcwc-Text.eu5v0x0 > span';
 
-        console.log(correctAdverts);
         let i = 0;
         for (let href of correctAdverts) {
-            console.log('entering ' + href);
+            console.log(getCurrentDateString() + 'entering ' + href);
             await page.goto(href, {
                 waitUntil: 'networkidle2',
                 timeout: 0
             });
 
             if (href.startsWith('https://www.olx.pl/d/oferta/')) {
-                console.log('success! ' + href)
+                console.log(getCurrentDateString() + ' success! ' + href)
                 let hrefChecked = await checkForPromotedAdvert(href);
 
                 let price = await getData(page, olxPriceSelector, null);
@@ -83,8 +86,10 @@ const crawl = async () => {
                 let area = await getData(page, olxAreaSelector, 'Powierzchnia: ');
 
                 let district = await getData(page, olxDistrictSelector, null, true);
+                sendMail(transporter,price,additionalPayments,href);
+
                 if (!district) {
-                    console.log('district not found at ' + href);
+                    console.log(getCurrentDateString() + ' district not found at ' + href);
                     if (await page.$(olxDistrictSelector) !== null) {
                         district = await page.evaluate(el => el.textContent, await page.$(olxDistrictSelector));
                     } else {
@@ -92,26 +97,29 @@ const crawl = async () => {
                     }
                 }
                 if (price && additionalPayments && area && district) {
-                    console.log('attempting to add a new record ' + href);
+                    const insertStatement =
+                        "INSERT INTO data (price,href,additional_payments,area,district) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (href) DO NOTHING RETURNING *;";
 
-                    pool.query("INSERT INTO data (price,href,additional_payments,area,district) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (href) DO NOTHING;", [price, hrefChecked, additionalPayments, area, district], function () {});
+                    console.log(getCurrentDateString() + ' attempting to add a new record ' + href);
 
-                    console.log('added ' + href);
+                    pool.query(insertStatement, [price, hrefChecked, additionalPayments, area, district], function (error, result) {
+                        if (result && result.rows[0]) {
+                            console.log(getCurrentDateString() + ' added ' + href);
+                            advertInfo[i] = {
+                                'href': href,
+                                'price': price,
+                                'additionalPayments': additionalPayments,
+                                'area': area,
+                                'district': district,
+                            };
+                            if(price + additionalPayments <= 2900){
+                                sendMail(transporter,price,additionalPayments,href);
+                            }
+                        }
+                    });
 
-                    advertInfo[i] = {
-                        'href': href,
-                        'price': price,
-                        'additionalPayments': additionalPayments,
-                        'area': area,
-                        'district': district,
-                    };
                 }
-
-
-
                 i++;
-
-
             }
         }
 
@@ -128,10 +136,10 @@ const crawl = async () => {
 
 
 (async function main() {
-    const cron = require('node-cron');
-    cron.schedule('*/20 * * * *', function () {
+    // const cron = require('node-cron');
+    // cron.schedule('*/20 * * * *', function () {
         crawl();
-    });
+    // });
 })();
 
 
@@ -146,4 +154,21 @@ const getData = async (page, olxSelector, word = null, district = null) => {
             }
         } else return data.replace(/\D/g, '');
     }
+}
+
+function getCurrentDateString() {
+    let today = new Date();
+    return "[" + today.getHours() + ":" + today.getMinutes() + ":" + today.getSeconds() + "]";
+};
+
+function sendMail(transporter,price,additionalPayments, href){
+    transporter.sendMail({
+        from: '"Crawler" <' + process.env.GMAIL_EMAIL + '>', // sender address
+        to: "magicznasowa16@gmail.com", // list of receivers
+        subject: "🤖 Znalazłem nowe mieszkanie w dobrej cenie 🤖", // Subject line
+        text: "O godzinie " + getCurrentDateString() + " znalazłem mieszkanie za " + price + "zł, oto link:" + href, // plain text body
+        html: "O godzinie " + getCurrentDateString() + " znalazłem mieszkanie za (łącznie) " + (+price + +additionalPayments) + "zł, oto link: </br>" + href, // html body
+      }).then(info => {
+        console.log({info});
+      }).catch(console.error);
 }
