@@ -1,21 +1,14 @@
 'use strict';
 if (process.env.NODE_ENV !== 'production')
- require('dotenv').config()
+    require('dotenv').config()
 
 const puppeteer = require('puppeteer');
 const _ = require("underscore");
-const pg = require('pg')
 
-const pool = new pg.Pool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    port: process.env.DB_PORT,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_DATABASE,
-    ssl: {
-        rejectUnauthorized: false,
-    }
-});
+
+let dbModule = require('./modules/database.js');
+let pool = dbModule.pool;
+
 
 const checkForPromotedAdvert = async (href) => {
 
@@ -28,10 +21,10 @@ const checkForPromotedAdvert = async (href) => {
 
 
 const crawl = async () => {
-    let myModule = require('./modules/mail.js');
-    let transporter = myModule.transporter;
+    let mailModule = require('./modules/mail.js');
+    let transporter = mailModule.transporter;
     transporter.verify().then(console.log).catch(console.error);
-    
+
     try {
 
         const link = 'https://www.olx.pl/nieruchomosci/mieszkania/wynajem/wroclaw/?search%5Bfilter_float_price%3Ato%5D=3000&search%5Bfilter_float_price%3Afrom%5D=1000&search%5Bfilter_enum_rooms%5D%5B0%5D=two';
@@ -46,21 +39,7 @@ const crawl = async () => {
 
         await page.goto(link);
 
-        const allHrefs = await page.evaluate(
-            () => Array.from(
-                document.querySelectorAll('a[href]'),
-                a => a.getAttribute('href')
-            )
-        );
-
-        const uniqueHrefs = allHrefs.filter((x, i, a) => a.indexOf(x) == i)
-
-        var correctAdverts = _.filter(
-            uniqueHrefs,
-            function (s) {
-                return s.indexOf('https://www.olx.pl/d/oferta/') !== -1 || s.indexOf('https://www.otodom.pl/pl/oferta/') !== -1;
-            }
-        );
+        let correctAdverts = await getCorrectAdverts(browser);
 
         let advertInfo = {};
 
@@ -86,7 +65,6 @@ const crawl = async () => {
                 let area = await getData(page, olxAreaSelector, 'Powierzchnia: ');
 
                 let district = await getData(page, olxDistrictSelector, null, true);
-                sendMail(transporter,price,additionalPayments,href);
 
                 if (!district) {
                     console.log(getCurrentDateString() + ' district not found at ' + href);
@@ -97,6 +75,7 @@ const crawl = async () => {
                     }
                 }
                 if (price && additionalPayments && area && district) {
+                    let totalCost = parseInt(price) + parseInt(additionalPayments);
                     const insertStatement =
                         "INSERT INTO data (price,href,additional_payments,area,district) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (href) DO NOTHING RETURNING *;";
 
@@ -112,8 +91,9 @@ const crawl = async () => {
                                 'area': area,
                                 'district': district,
                             };
-                            if(price + additionalPayments <= 2900){
-                                sendMail(transporter,price,additionalPayments,href);
+                            if (totalCost <= 2900) {
+                                console.log('sending mail');
+                                sendMail(transporter, price, additionalPayments, href);
                             }
                         }
                     });
@@ -136,10 +116,10 @@ const crawl = async () => {
 
 
 (async function main() {
-    // const cron = require('node-cron');
-    // cron.schedule('*/20 * * * *', function () {
+    const cron = require('node-cron');
+    cron.schedule('*/20 * * * *', function () {
         crawl();
-    // });
+    });
 })();
 
 
@@ -156,19 +136,42 @@ const getData = async (page, olxSelector, word = null, district = null) => {
     }
 }
 
+const getCorrectAdverts = async (browser) => {
+    const [page] = await browser.pages();
+
+    const allHrefs = await page.evaluate(
+        () => Array.from(
+            document.querySelectorAll('a[href]'),
+            a => a.getAttribute('href')
+        )
+    );
+
+    const uniqueHrefs = allHrefs.filter((x, i, a) => a.indexOf(x) == i)
+    return _.filter(
+        uniqueHrefs,
+        function (s) {
+            return s.indexOf('https://www.olx.pl/d/oferta/') !== -1 || s.indexOf('https://www.otodom.pl/pl/oferta/') !== -1;
+        }
+    );
+
+
+}
+
 function getCurrentDateString() {
     let today = new Date();
     return "[" + today.getHours() + ":" + today.getMinutes() + ":" + today.getSeconds() + "]";
 };
 
-function sendMail(transporter,price,additionalPayments, href){
+function sendMail(transporter, price, additionalPayments, href) {
     transporter.sendMail({
         from: '"Crawler" <' + process.env.GMAIL_EMAIL + '>', // sender address
-        to: "magicznasowa16@gmail.com", // list of receivers
+        to: "magicznasowa16@gmail.com,aleksandra.kucharczyk13@gmail.com", // list of receivers
         subject: "🤖 Znalazłem nowe mieszkanie w dobrej cenie 🤖", // Subject line
         text: "O godzinie " + getCurrentDateString() + " znalazłem mieszkanie za " + price + "zł, oto link:" + href, // plain text body
         html: "O godzinie " + getCurrentDateString() + " znalazłem mieszkanie za (łącznie) " + (+price + +additionalPayments) + "zł, oto link: </br>" + href, // html body
-      }).then(info => {
-        console.log({info});
-      }).catch(console.error);
+    }).then(info => {
+        console.log({
+            info
+        });
+    }).catch(console.error);
 }

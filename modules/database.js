@@ -1,18 +1,14 @@
-const {Client} = require('pg');
+const pg = require('pg')
 
-const client = new Client({
-    host:  "localhost",
-    user: "postgres",
-    port: 5432,
-    password: "root",
-    database: "crawler"
-})
-
-client.connect();
-client.query('SELECT * FROM crawler',(err,res) =>{
-    if (!err) {
-        console.log(res.rows);
-    } else {
-        console.log(err.message);
+const pool = new pg.Pool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    port: process.env.DB_PORT,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_DATABASE,
+    ssl: {
+        rejectUnauthorized: false,
     }
-})
+});
+
+exports.pool = pool;

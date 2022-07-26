@@ -3,19 +3,10 @@ if (process.env.NODE_ENV !== 'production') require('dotenv').config()
 
 const puppeteer = require('puppeteer');
 const _ = require("underscore");
-const pg = require('pg')
+let dbModule = require('./modules/database.js');
 
-const pool = new pg.Pool({
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    port: process.env.DB_PORT,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_DATABASE,
-    ssl: {
-        rejectUnauthorized: false,
-    }
-});
 
+let pool = dbModule.pool;
 
 const checkForPromotedAdvert = async (href) => {
 
@@ -47,26 +38,10 @@ const crawl = async () => {
 
         await page.goto(link);
 
-        const allHrefs = await page.evaluate(
-            () => Array.from(
-                document.querySelectorAll('a[href]'),
-                a => a.getAttribute('href')
-            )
-        );
-
-        const uniqueHrefs = allHrefs.filter((x, i, a) => a.indexOf(x) == i)
-        var correctAdverts = _.filter(
-            uniqueHrefs,
-            function (s) {
-                return s.indexOf('/d/oferta/') !== -1 || s.indexOf('https://www.otodom.pl/pl/oferta/') !== -1;
-            }
-        );
-
+        let correctAdverts = await getCorrectAdverts(browser);
         let advertInfo = {};
 
         const olxPriceSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-1vnw4ly > div.css-1wws9er > div.css-dcwlyx > h3';
-        // const olxAreaSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-1vnw4ly > div.css-1wws9er > ul > li:nth-child(5) > p';
-        // const olxAdditionalPaymentsSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-1vnw4ly > div.css-1wws9er > ul > li:nth-child(7) > p';
         const olxDistrictSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-1pyxm30 > div:nth-child(2) > div > section > div.css-1nrl4q4 > div > p.css-7xdcwc-Text.eu5v0x0 > span';
 
         let i = 0;
@@ -84,8 +59,6 @@ const crawl = async () => {
                 let hrefChecked = await checkForPromotedAdvert(href);
 
                 let price = await getData(page, olxPriceSelector, null);
-                // let additionalPayments = await getData(page, olxAdditionalPaymentsSelector, 'Czynsz');
-                // let area = await getData(page, olxAreaSelector, 'Powierzchnia: ');
                 let district = await getData(page, olxDistrictSelector, null, true);
 
                 if (!district) {
@@ -97,19 +70,19 @@ const crawl = async () => {
                     }
                 }
 
-                const insertStatement = 
-                "INSERT INTO data_1person (price,href,district) VALUES ($1,$2,$3) ON CONFLICT (href) DO NOTHING RETURNING *;"
+                const insertStatement =
+                    "INSERT INTO data_1person (price,href,district) VALUES ($1,$2,$3) ON CONFLICT (href) DO NOTHING RETURNING *;"
 
-                pool.query(insertStatement, [price, hrefChecked, district], function (error,result) {
-                    if (result,result.rows[0]){
+                pool.query(insertStatement, [price, hrefChecked, district], function (error, result) {
+                    if (result, result.rows[0]) {
                         console.log(getCurrentDateString() + 'added ' + href);
                         advertInfo[i] = {
                             'href': href,
                             'price': price,
                             'district': district,
                         };
-                        if(+price <= 750){
-                            sendMail(transporter,price,href);
+                        if (+price <= 750) {
+                            sendMail(transporter, price, href);
                         }
                     }
                 });
@@ -136,7 +109,26 @@ const crawl = async () => {
     // });
 })();
 
+const getCorrectAdverts = async (browser) => {
+    const [page] = await browser.pages();
 
+    const allHrefs = await page.evaluate(
+        () => Array.from(
+            document.querySelectorAll('a[href]'),
+            a => a.getAttribute('href')
+        )
+    );
+
+    const uniqueHrefs = allHrefs.filter((x, i, a) => a.indexOf(x) == i)
+    return _.filter(
+        uniqueHrefs,
+        function (s) {
+            return s.indexOf('/d/oferta/') !== -1 || s.indexOf('https://www.otodom.pl/pl/oferta/') !== -1;
+        }
+    );
+
+
+}
 
 const getData = async (page, olxSelector, word = null, district = null) => {
     if (await page.$(olxSelector) !== null) {
@@ -155,14 +147,16 @@ function getCurrentDateString() {
     return "[" + today.getHours() + ":" + today.getMinutes() + ":" + today.getSeconds() + "]";
 };
 
-function sendMail(transporter,price, href){
+function sendMail(transporter, price, href) {
     transporter.sendMail({
         from: '"Crawler" <' + process.env.GMAIL_EMAIL + '>', // sender address
         to: "jnnkczm@gmail.com", // list of receivers
         subject: "🤖 Znalazłem pokój w dobrej cenie 🤖", // Subject line
         text: "O godzinie " + getCurrentDateString() + " znalazłem pokój za " + price + "zł, oto link: </br>" + href, // plain text body
         html: "O godzinie " + getCurrentDateString() + " znalazłem pokój za " + price + "zł, oto link: </br>" + href, // plain text body
-      }).then(info => {
-        console.log({info});
-      }).catch(console.error);
+    }).then(info => {
+        console.log({
+            info
+        });
+    }).catch(console.error);
 }
