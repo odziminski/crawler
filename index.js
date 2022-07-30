@@ -40,7 +40,7 @@ const crawl = async () => {
         await page.goto(link);
 
         let correctAdverts = await getCorrectAdverts(browser);
-
+        console.log(correctAdverts);
         let advertInfo = {};
 
         const olxPriceSelector = '#root > div.css-50cyfj > div.css-1on7yx1 > div:nth-child(3) > div.css-1vnw4ly > div.css-1wws9er > div.css-dcwlyx > h3';

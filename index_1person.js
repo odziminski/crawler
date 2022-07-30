@@ -104,9 +104,9 @@ const crawl = async () => {
 
 (async function main() {
     const cron = require('node-cron');
-    // cron.schedule('*/30 * * * *', function () {
+    cron.schedule('*/30 * * * *', function () {
         crawl();
-    // });
+    });
 })();
 
 const getCorrectAdverts = async (browser) => {
