@@ -92,7 +92,7 @@ const crawl = async () => {
                             };
                             if (totalCost <= 2900) {
                                 console.log('sending mail');
-                                sendMail(transporter, price, additionalPayments, href);
+                                sendMail(transporter, price, additionalPayments, href,false);
                             }
                         }
                     });
