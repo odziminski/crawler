@@ -255,7 +255,7 @@ const crawl_1person = async () => {
 
 
 (async function main() {
-    const cron = require('node-cron');
+    // const cron = require('node-cron');
     // cron.schedule('*/30 * * * *', function () {
         crawl();
         crawl_1person();
