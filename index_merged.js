@@ -155,6 +155,7 @@ function sendMail(transporter, price, additionalPayments, href, onePerson) {
     let receiver = onePerson ? "jnnkczm@gmail.com" :  "magicznasowa16@gmail.com,aleksandra.kucharczyk13@gmail.com";
     let subject = onePerson ? "🤖 Znalazłem pokój w dobrej cenie 🤖" :  "🤖 Znalazłem nowe mieszkanie w dobrej cenie 🤖";
     let text = onePerson ? "O godzinie " + getCurrentDateString() + " znalazłem pokój za " + price + "zł, oto link: </br>" + href : "O godzinie " + getCurrentDateString() + " znalazłem mieszkanie za (łącznie) " + (+price + +additionalPayments) + "zł, oto link: </br>" + href;
+    console.log(receiver,subject,text);
     transporter.sendMail({
         from: '"Crawler" <' + process.env.GMAIL_EMAIL + '>', 
         to: receiver, 
@@ -280,16 +281,3 @@ function getCurrentDateString() {
     return "[" + today.getHours() + ":" + today.getMinutes() + ":" + today.getSeconds() + "]";
 };
 
-function sendMail(transporter, price, href) {
-    transporter.sendMail({
-        from: '"Crawler" <' + process.env.GMAIL_EMAIL + '>', // sender address
-        to: "jnnkczm@gmail.com", // list of receivers
-        subject: "🤖 Znalazłem pokój w dobrej cenie 🤖", // Subject line
-        text: "O godzinie " + getCurrentDateString() + " znalazłem pokój za " + price + "zł, oto link: </br>" + href, // plain text body
-        html: "O godzinie " + getCurrentDateString() + " znalazłem pokój za " + price + "zł, oto link: </br>" + href, // plain text body
-    }).then(info => {
-        console.log({
-            info
-        });
-    }).catch(console.error);
-}
