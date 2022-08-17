@@ -278,6 +278,6 @@ const getData = async (page, olxSelector, word = null, district = null) => {
 
 function getCurrentDateString() {
     let today = new Date();
-    return "[" + today.getHours() + ":" + today.getMinutes() + ":" + today.getSeconds() + "]";
+    return "[" + (today.getHours()+2) + ":" + today.getMinutes() + ":" + today.getSeconds() + "]";
 };
 
