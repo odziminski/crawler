@@ -259,7 +259,7 @@ const crawl_1person = async () => {
     // const cron = require('node-cron');
     // cron.schedule('*/30 * * * *', function () {
         crawl();
-        crawl_1person();
+        // crawl_1person();
     // });
 })();
 
