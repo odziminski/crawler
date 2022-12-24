@@ -2,8 +2,10 @@
 if (process.env.NODE_ENV !== 'production')
     require('dotenv').config()
 
+
 const puppeteer = require('puppeteer');
 const _ = require("underscore");
+var cron = require('node-cron');
 
 let dbModule = require('./modules/database.js');
 let pool = dbModule.pool;
@@ -80,7 +82,7 @@ const crawl = async () => {
                 let area = await getData(page, olxAreaSelector, 'Powierzchnia: ');
 
                 let district = await getData(page, olxDistrictSelector, null, true);
-
+                console.log(price,additionalPayments,area,district);
                 if (!district) {
                     console.log(getCurrentDateString() + ' district not found at ' + href);
                     if (await page.$(olxDistrictSelector) !== null) {
@@ -97,6 +99,9 @@ const crawl = async () => {
                     console.log(getCurrentDateString() + ' attempting to add a new record ' + href);
 
                     pool.query(insertStatement, [price, hrefChecked, additionalPayments, area, district], function (error, result) {
+                        if (error){
+                            console.log(error);
+                        }
                         if (result && result.rows[0]) {
                             console.log(getCurrentDateString() + ' added ' + href);
                             advertInfo[i] = {
@@ -176,7 +181,10 @@ function sendMail(transporter, price, additionalPayments, href, onePerson) {
 
 
 (async function main() {
-    await crawl();
+    cron.schedule('*/15 * * * *', () => {
+        crawl();
+
+    });
 })();
 
 

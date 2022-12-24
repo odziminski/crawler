@@ -10,5 +10,4 @@ const pool = new pg.Pool({
         rejectUnauthorized: false,
     }
 });
-
 exports.pool = pool;
