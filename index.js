@@ -6,6 +6,7 @@ if (process.env.NODE_ENV !== 'production')
 const puppeteer = require('puppeteer');
 const _ = require("underscore");
 var cron = require('node-cron');
+const colors = require('colors');
 
 let dbModule = require('./modules/database.js');
 let pool = dbModule.pool;
@@ -80,11 +81,14 @@ const crawl = async () => {
                 let price = await getData(page, olxPriceSelector, null);
                 let additionalPayments = await getData(page, olxAdditionalPaymentsSelector, 'Czynsz');
                 let area = await getData(page, olxAreaSelector, 'Powierzchnia: ');
+                if (area.toString().includes(',')) {
+                    area = area.toString().replace(',', '.');
+                }
 
                 let district = await getData(page, olxDistrictSelector, null, true);
                 console.log(price,additionalPayments,area,district);
                 if (!district) {
-                    console.log(getCurrentDateString() + ' district not found at ' + href);
+                    console.log(colors.red(getCurrentDateString() + ' district not found at ' + href));
                     if (await page.$(olxDistrictSelector) !== null) {
                         district = await page.evaluate(el => el.textContent, await page.$(olxDistrictSelector));
                     } else {
@@ -96,7 +100,7 @@ const crawl = async () => {
                     const insertStatement =
                         "INSERT INTO data (price,href,additional_payments,area,district) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (href) DO NOTHING RETURNING *;";
 
-                    console.log(getCurrentDateString() + ' attempting to add a new record ' + href);
+                    console.log(colors.green(getCurrentDateString() + ' attempting to add a new record ' + href));
 
                     pool.query(insertStatement, [price, hrefChecked, additionalPayments, area, district], function (error, result) {
                         if (error){
@@ -165,7 +169,6 @@ function sendMail(transporter, price, additionalPayments, href, onePerson) {
     let receiver = onePerson ? "jnnkczm@gmail.com" : "magicznasowa16@gmail.com,aleksandra.kucharczyk13@gmail.com";
     let subject = onePerson ? "🤖 Znalazłem pokój w dobrej cenie 🤖" : "🤖 Znalazłem nowe mieszkanie w dobrej cenie 🤖";
     let text = onePerson ? "O godzinie " + getCurrentDateString() + " znalazłem pokój za " + price + "zł, oto link: </br>" + href : "O godzinie " + getCurrentDateString() + " znalazłem mieszkanie za (łącznie) " + (+price + +additionalPayments) + "zł, oto link: </br>" + href;
-    console.log(receiver, subject, text);
     transporter.sendMail({
         from: '"Crawler" <' + process.env.GMAIL_EMAIL + '>',
         to: receiver,
@@ -183,7 +186,6 @@ function sendMail(transporter, price, additionalPayments, href, onePerson) {
 (async function main() {
     cron.schedule('*/25 * * * *', () => {
         crawl();
-
     });
 })();
 
